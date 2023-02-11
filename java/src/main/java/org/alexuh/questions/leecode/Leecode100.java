@@ -1,6 +1,10 @@
 package org.alexuh.questions.leecode;
 
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.AbstractQueuedSynchronizer;
+import java.util.concurrent.locks.ReentrantLock;
 
 
 /**
@@ -800,12 +804,478 @@ public class Leecode100 {
         return result;
     }
 
+    /**
+     * 56. 合并区间
+     * 输入：intervals = [[1,3],[2,6],[8,10],[15,18]]
+     * 输出：[[1,6],[8,10],[15,18]]
+     *
+     * @param intervals
+     * @return
+     */
+    public int[][] merge(int[][] intervals) {
+        // 思路:
+        // 先按左端点进行排序,[1,3] [1,6] [2,4] [2,3] [3,6]
+        // 将第一个区间加入merge数组,如果后面一个数组的左端点小于等于在数组中的右端点,则说明区间重合，此时取两个区间右端点最大值
+        // 如果后面一个数组左端点大于，meger数组中的右端点则说明区间不重合,将这个区间放入数组中
+        // 一次进行上面的合并
+
+        if (intervals == null || intervals.length == 0) {
+            return new int[1][1];
+        }
+        // 1.左端点排序
+        Arrays.sort(intervals, new Comparator<int[]>() {
+            @Override
+            public int compare(int[] o1, int[] o2) {
+                return o1[0] - o2[0];
+            }
+        });
+        // 存储结果数组
+        List<int[]> merge = new ArrayList<>();
+        // 遍历合并
+        for(int[] v : intervals) {
+            int l = v[0]; // 左端点
+            int r = v[1]; // 右端点
+            if (merge.size() == 0 || merge.get(merge.size() - 1)[1] < l) { // meger列表为空或者前一个的右端点小于当前的左端点，区间不重合
+                merge.add(v);
+            } else { // 区间重合，选取右端点最大的
+                merge.get(merge.size() - 1)[1] = Math.max(r, merge.get(merge.size() - 1)[1]);
+            }
+        }
+        // 转化成数组
+        return merge.toArray(new int[merge.size()][]);
+    }
+
+    /**
+     * 406. 根据身高重建队列
+     */
+
+    public int[][] reconstructQueue(int[][] people) {
+        // 对升高进行降序对排名进行升序排列，然后利用list.add(index, ele)的插入法
+        // 排序
+        Arrays.sort(people, new Comparator<int[]>() {
+            @Override
+            public int compare(int[] o1, int[] o2) {
+                if (o1[0] != o2[0]) {
+                    return o2[0] - o1[0]; // 升高降序
+                } else {
+                    return o1[1] - o2[1]; // 排名升序
+                }
+            }
+        });
+
+        List<int[]> result = new ArrayList<>();
+        for(int[] v : people) {
+            result.add(v[1], v); // 插入法
+        }
+        return result.toArray(new int[result.size()][]);
+
+    }
+
+    /**
+     * 128. 最长连续序列
+     *
+     * @param nums
+     * @return
+     */
+    public int longestConsecutive(int[] nums) {
+        // 解法: 类似于接雨水双指针解法(往2边走找较大的),初步: 初始化一个map,遍历每一个数，使用双指针两边走看是否在集合中，左右指针最长的就是结果
+        // 优化: 只需从最小的一位数开始如 5 7 4 6 , 当遍历到5时发现有4直接跳过继续往下遍历，直到4就可以开始统计以4开始的连续序列长度
+        if (nums == null || nums.length == 0) {
+            return 0;
+        }
+
+        int maxLength = 1;
+        Set<Integer> set = new HashSet<>();
+        for(int v : nums) {
+            set.add(v);
+        }
+        for(int v : nums) {
+            int l = 1;
+            if (set.contains(v - 1)) { // 存在比自己小1的继续寻找，直到找到最小的开始统计
+                continue;
+            }
+            while(set.contains(v+1)) {
+                v++; // notice: v要加1不然就一直循环
+                l++;
+            }
+            maxLength = Math.max(maxLength, l);
+        }
+        return maxLength;
+    }
+
+    //4. 寻找两个正序数组的中位数
+    public double findMedianSortedArrays(int[] nums1, int[] nums2) {
+        return 0.0;
+    }
+
+    /**
+     * 238. 除自身以外数组的乘积
+     *
+     * @param nums
+     * @return
+     */
+    public int[] productExceptSelf(int[] nums) {
+        // 解法: 当前数组值 = 左边的乘机 * 右边的乘机
+        int[] left = new int[nums.length];
+        int v = 1;
+        // 左边乘机
+        for (int i = 0; i < nums.length; i++) {
+            left[i] = v;  // 第一位左边乘机为1
+            v *= nums[i];
+        }
+        System.out.println(Arrays.toString(left));
+        // 右边乘机 和输出一起
+        int[] result = new int[nums.length];
+        int r = 1;
+        for(int i=nums.length - 1; i >= 0 ;i--) {
+            result[i] = r*left[i]; // 左边乘机 * 右边乘机
+            r *= nums[i]; // 右边乘机: 最后一位右边乘机为1
+        }
+        return result;
+    }
+
+    /**
+     * 72. 编辑距离
+     * @param word1
+     * @param word2
+     * @return
+     */
+    public int minDistance(String word1, String word2) {
+        // 解法: 动态规划,最后状态插入,删除,替换
+        // dp[i][j]: 表示word1 [0,i]和word2 [0,j]的最短编辑距离
+        int m = word1.length();
+        int n = word2.length();
+        int[][] dp = new int[m + 1][n + 1];
+        // 初始化，空字符串->word1,都是只需要添加也就是dp[i][0] = i
+        for(int i = 0; i < m+1; i++) {
+            dp[i][0] = i;
+        }
+        for (int i = 0; i < n+1; i++) {
+            dp[0][i] = i;
+        }
+        // 遍历顺序从左到右，从上到下
+        for (int i = 1; i < m+1; i++) {
+            for (int j = 1; j < n+1; j++) {
+                // 当前遍历位置i-1 j-1
+                if (word1.charAt(i-1) == word2.charAt(j-1)) {
+                    // 状态1: 如果最后一位相同不需要操作即可
+                    dp[i][j] = dp[i-1][j-1];
+                } else {
+                    // 状态2: world1需要删除一个字符 dp[i-1][j] + 1
+                    // 状态3：word1需要新增一个字符  dp[i][j-1] + 1
+                    // 状态4: word1需要替换一个字符 dp[i-1][j-1] + 1
+                    // dp[i][j] = min(状态2，状态3,状态4)
+                    dp[i][j] = Math.min(dp[i-1][j-1], Math.min(dp[i-1][j], dp[i][j-1])) + 1;
+                }
+            }
+        }
+        return dp[m][n];
+    }
+
+    /**
+     * 200. 岛屿数量
+     * @param grid
+     * @return
+     */
+    public int numIslands(char[][] grid) {
+        // 解法: dfs访问所有节点,遇到1的陆地就标记与它周围相邻的陆地这周围标记的就是一个岛屿,依次遍历所有网格所有的点获得所有的岛屿
+        if (grid == null || grid.length == 0 || grid[0].length == 0) {
+            return 0;
+        }
+        int m = grid.length;
+        int n = grid[0].length;
+        int res = 0;
+        for (int i = 0; i < m; i++) {
+            for(int j = 0; j < n; j++) {
+                // 遇到1的陆地结果加1并将周围陆地都标记为已访问
+                if (grid[i][j] == '1') {
+                    res++;
+                    numIslandsDfs(grid,i, j);
+                }
+            }
+        }
+        return res;
+    }
+
+    public void numIslandsDfs(char[][] grid, int row, int col) {
+        // 递归返回条件1：上下左右边界判断超出即返回，和二叉树dfs类似
+        if (col < 0 || row < 0 || row > grid.length - 1 || col > grid[0].length - 1) {
+            return;
+        }
+        // 递归返回条件2: 如果非陆地也就是 grid[row][col] != 1
+        if (grid[row][col] != '1') {
+            return;
+        }
+        // 和二叉树先序遍历相同，先访问当前节点，标记为已访问，然后访问上下左右节点
+        grid[row][col] = '2'; // 访问的标记为2
+        // 访问上下左右
+        numIslandsDfs(grid, row+1, col);
+        numIslandsDfs(grid, row-1, col);
+        numIslandsDfs(grid, row, col+1);
+        numIslandsDfs(grid, row, col-1);
+    }
+
+
+    /**
+     * 96. 不同的二叉搜索树
+     *
+     * @param n
+     * @return
+     */
+    public int numTrees(int n) {
+        // 直接记忆公式  dp[i] += dp[j-1] * dp[i-j];
+        int[] dp = new int[n + 1];
+        dp[0] = 1;
+        dp[1] = 1;
+        for (int i = 2; i < n + 1; i++) {
+            for (int j = 1; j <= i; j++) {
+                dp[i] += dp[j-1] * dp[i-j];
+            }
+        }
+        return dp[n];
+    }
+
+    /**
+     * 124. 二叉树中的最大路径和
+     */
+    int maxValue = Integer.MIN_VALUE;
+    public int maxPathSum(TreeNode root) {
+        // 后序遍历+递归
+        maxPathSumDfs(root);
+        return maxValue;
+    }
+
+    public int maxPathSumDfs(TreeNode node) {
+        if (node == null) {
+            return 0;
+        }
+        // 左子树最大值
+        int left = Math.max(maxPathSumDfs(node.left), 0);
+        // 右子树最大值
+        int right = Math.max(maxPathSumDfs(node.right), 0);
+        // 计算路径最大值
+        int pathValue = node.val + left + right;
+        // 更新最大值
+        maxValue = Math.max(maxValue, pathValue);
+        return node.val + Math.max(left, right);
+    }
+
+    /**
+     * 139. 单词拆分
+     * 
+     * @param s
+     * @param wordDict
+     * @return
+     */
+    public boolean wordBreak(String s, List<String> wordDict) {
+        //  dp[i]: 表示前i个字符[0,i-1]能否被字典里的值组成
+        // 假设可以最后状态 0 j i  如果[0-j]能被组成并且[j,i]也被包含说明[0,i]=true
+        boolean[] dp = new boolean[s.length() + 1];
+        // 初始化: 空字符串能被字典里组成，一个单词都不出
+        Set<String> words = new HashSet<>();
+        words.addAll(wordDict);
+        dp[0] = true;
+        for (int i = 1; i < s.length()+1; i++) {
+            for (int j = 0; j < i; j++) {
+                if (dp[j] && words.contains(s.substring(j, i))) {
+                    dp[i] = true;
+                    break; // 存在的话直接返回从i开始进行下一轮判断
+                }
+            }
+        }
+        return dp[s.length()];
+    }
+
+    /**
+     * 394. 字符串解码
+     *
+     * 输入：s = "3[a]2[bc]"
+     * 输出："aaabcbc"
+     *
+     * 输入：s = "3[a2[c]]"
+     * 输出："accaccacc"
+     *
+     * @param s
+     * @return
+     */
+    public String decodeString1(String s) {
+        // 思路:利用栈如果匹配到右括号]就解码到左括号所在位置,然后将解码出来的字符在压入栈(题目中有嵌套类型如3[a2[c]])
+        //Character.isLetter() [a,z] isDigit [0,9]
+
+        if (s == null || s.length() == 0) {
+            return "";
+        }
+        // 初始化参数
+        Stack<Character> stack = new Stack<>();
+        int len = s.length();
+        for (int i = 0; i < len; i++) {
+            if (s.charAt(i) != ']') {
+                stack.push(s.charAt(i)); // 不为]所有字符字节入栈
+            } else {  // 匹配到]
+                // 获取[之前的字符
+                StringBuilder sb = new StringBuilder();
+                while(!stack.isEmpty() && stack.peek() != '[') {
+                    sb.append(stack.pop());
+                }
+                stack.pop(); // 弹出左括号[
+                // 获取数字
+                StringBuilder num = new StringBuilder();
+                while(!stack.isEmpty() && Character.isDigit(stack.peek())) {
+                    num.append(stack.pop());
+                }
+                // 将字符和数字翻转之后根据num次数在压入栈中
+                int size = Integer.parseInt(num.reverse().toString());
+                for (int j = 0; j < size ; j++) {
+                    for (int k = sb.length() - 1; k >= 0; k--) {
+                        stack.push(sb.charAt(k));
+                    }
+                }
+            }
+        }
+
+        // 获取栈的所有数据，翻转即为结果
+        StringBuilder sb = new StringBuilder();
+        while (!stack.isEmpty()) {
+            sb.append(stack.pop());
+        }
+        return sb.reverse().toString();
+    }
+
+    /**
+     * 32. 最长有效括号
+     *
+     * dp
+     * @param s
+     * @return
+     */
+    public int longestValidParentheses(String s) {
+        // dp[i]: 表示以s[i] 为结尾的字符的最长有效括号
+        int[] dp = new int[s.length()];
+        // 初始化都为0    ()()(())
+        // 最终状态: 1.如果s[i]='(', dp[i] = 0 (一定要包含s[i]最后一位以(结尾则没有有效括号)
+        //         2. 如果s[i] = ')', 如果s[i-1]='(', 则长度=dp[i-2] + 2     ()()[i]
+        //         3. 如果s[i] = ')',说明前面可能有已经好的有效括号，3.1: j的位置是左括号 v = i和前面匹配到的左括号 + 括号中有效的 + 括号外(包含j-1的) =2+dp[i-1] + dp[j-1]
+        //                                                     3.2: 如果j的位置是右括号则这次没有匹配到直接跳过
+        //                                ()()([j] () ) [i] ;  j = i - dp[i-1]-1
+
+        int len = s.length();
+        int maxLen = 0;
+        for(int i = 1; i < len; i++) {
+            if (s.charAt(i) == '(') {
+                dp[i] = 0;
+            } else {  //  s[i] =')'
+                if (s.charAt(i-1) == '(' ) { // s[i-1] = '(',前一位正好为( 组成一对 再加上包含i-2的最长有效数
+                    dp[i] = 2 + (i-2>=0 ? dp[i-2] : 0);  // () i=1时边界情况
+                } else {  // s[i-1] = ')',v = i和前面匹配到的左括号 + 括号中有效的 + 括号外(包含j-1的) =2+dp[i-1] + dp[j-1]
+                    if (i-dp[i-1]-1 >= 0 && s.charAt(i-dp[i-1]-1) == '(' ) { // 如果s[j] = '（' 和s[i]正好可以组成一对  j=i-dp[i-1]-1
+                        dp[i] = 2 + dp[i-1] + (i - dp[i-1]-2>=0 ? dp[i - dp[i-1]-2] : 0);
+                    }
+                }
+
+            }
+            maxLen = Math.max(maxLen, dp[i]);
+        }
+        System.out.println(Arrays.toString(dp));
+        return maxLen;
+    }
+
+    /**
+     * 207. 课程表
+     * @param numCourses
+     * @param prerequisites
+     * @return
+     */
+    public boolean canFinish(int numCourses, int[][] prerequisites) {
+        // 思路: 拓扑排序,验证是否存在回路
+        return true;
+    }
+
+
+    public  int removeDuplicates(int[] nums) {
+//        if (nums == null) {
+//            return 0;
+//        }
+//        if (nums.length < 2) {
+//            return nums.length;
+//        }
+//        int index = 2;
+//        for (int i = 2;  i < nums.length; i++) {
+//            System.out.println(nums[i]);
+//            if (nums[i-2] == nums[i]) { // 3位数都相同继续
+//                index = i;
+//                continue;
+//            }
+//            nums[index] = nums[i];
+//            //index++;
+//
+//            Character.toLowerCase(nums[i]);
+//        }
+//        return index;
+        //StringBuilder sb = new StringBuilder("dsa");
+        return 0;
+    }
+
+    public  boolean isPalindrome(String s) {
+        // 解法: 双指针两边遍历 遇到字母转成小写后进行比较是否相同
+        int left = 0;
+        int right = s.length() - 1;
+        while(left < right) {
+            while (left < right && !Character.isLetter(s.charAt(left))) {
+                left++;
+            }
+            while(left < right && !Character.isLetter(s.charAt(left))) {
+                right--;
+            }
+            if ( Character.toLowerCase(s.charAt(left)) != Character.toLowerCase(s.charAt(right))) {
+                return false;
+            }
+            left++;
+            right--;
+        }
+        // 遍历完说明时回文
+        return true;
+    }
 
     public static void main(String[] args) {
+
+        ReentrantLock lock = new ReentrantLock();
+
+        UUID.randomUUID().toString();
+
+
+
+//        Collections.synchronizedList(new ArrayList<>());
+//
+//        Executor pool = Executors.newFixedThreadPool(10); // corePoolSize = n; maxPoolsize=n; queue.size = Integer.MAX_VALUE
+//        Executor pool = Executors.newSingleThreadExecutor(); // corePoolSize = 1; maxPoolsize=1; queue.size = Integer.MAX_VALUE
+//        Executor pool = Executors.newCachedThreadPool(); // corePoolSize = 0; maxPoolsize=Integer.MAX_VALUE; queue.size = 1
+//
+//        HashMap<String, Integer> map = new HashMap()
+//
+//        Map<String, String> table = new Hashtable<>();
+//        table.put()
+//
+//        for(int i = 0; i <= 20; i++) {
+//            new Thread(() -> {
+//
+//            }, String.valueOf(i)).start();
+//        }
+
         int[][] grid = new int[3][3];
         grid[0] = new int[]{1,3,1};
         grid[1] = new int[]{1,5,1};
         grid[2] = new int[]{4,2,1};
+        //0L, TimeUnit.MILLISECONDS,
+              //  new LinkedBlockingQueue<Runnable>()
+        Executor pool = new ThreadPoolExecutor(
+                10,  // 线程池的常驻核心线程数
+                20,               // 线程池可以容纳的最大线程数
+                0L,             // 多余的空闲线程存活时间
+                TimeUnit.MILLISECONDS, // 上面存活时间单位ms
+                new LinkedBlockingQueue<>(20), //阻塞队列存放提交未被执行的任务
+                Executors.defaultThreadFactory(), // 创建线程的线程工厂
+                new ThreadPoolExecutor.AbortPolicy() // 默认拒绝策略: 任务无法提交抛出异常
+                );
 
         // System.out.println(new Leecode100().minPathSum(grid));
         //System.out.println(new Leecode100().subarraySum(new int[]{1, 1, 1}, 2));
@@ -826,7 +1296,24 @@ public class Leecode100 {
 //        sb.append('3');
 //        sb.append('4');
 //        System.out.println(sb.toString());
-        new Leecode100().search(new int[]{4,5,6,7,0,1,2}, 0);
+        //new Leecode100().search(new int[]{4,5,6,7,0,1,2}, 0);
+//        List<Integer> list = new ArrayList<>();
+//        list.add(10);
+//        list.add(0, 11);
+//        list.add(1, 12);
+//        System.out.println(Arrays.toString(list.toArray()));
+
+        //System.out.println(new Leecode100().longestConsecutive(new int[]{100,4,200,1,3,2}));
+        System.out.println(Character.isLetter(']'));
+        System.out.println(Integer.parseInt(String.valueOf('1')));
+        StringBuilder sb = new StringBuilder();
+        sb.append('1');
+        sb.append('2');
+        System.out.println(sb.toString());
+        System.out.println("sda".substring(0, 0));
+        System.out.println("sda".substring(0, 1));
+        int[] a = new int[]{};
+        new Leecode100().isPalindrome("race a car");
 
     }
 }
